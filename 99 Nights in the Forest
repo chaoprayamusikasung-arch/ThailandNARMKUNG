@@ -1,0 +1,592 @@
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+-- โหลด WindUI
+local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
+
+WindUI.TransparencyValue = 0.15
+WindUI:SetTheme("Dark")
+
+-- Main Window
+local Window = WindUI:CreateWindow({
+    Title = "99 Nights in the Forest",
+    Icon = "trees",
+    Author = "By ThailandNARMKUNG",
+    Folder = "ForestSurvival_99Nights",
+    Size = UDim2.fromOffset(680, 550),
+    Theme = "Dark",
+    Acrylic = true,
+    SideBarWidth = 240,
+})
+
+-- ❤️ Health Tag
+local HealthTag = Window:Tag({
+    Title = "❤️ 100%",
+    Color = Color3.fromHex("#FF6B6B")
+})
+
+-- 🍖 Hunger Tag
+local HungerTag = Window:Tag({
+    Title = "🍖 100%",
+    Color = Color3.fromHex("#FFA500")
+})
+
+-- 🌞 DayCounter
+local Interface = PlayerGui:WaitForChild("Interface")
+local dayCounterLabel = Interface:WaitForChild("DayCounter") :: TextLabel
+
+local DayTag = Window:Tag({
+    Title = "☀️ " .. dayCounterLabel.Text,
+    Color = Color3.fromHex("#FFD700")
+})
+dayCounterLabel:GetPropertyChangedSignal("Text"):Connect(function()
+    DayTag:SetTitle("☀️ " .. dayCounterLabel.Text)
+end)
+
+-- อัปเดตเลือด %
+local function setupHealthTracker(char: Model)
+    local humanoid = char:WaitForChild("Humanoid")
+    local function updateHealth()
+        local health = humanoid.Health
+        local maxHealth = humanoid.MaxHealth
+        local percent = 0
+        if maxHealth > 0 then
+            percent = math.floor((health / maxHealth) * 100)
+        end
+        HealthTag:SetTitle("❤️ " .. percent .. "%")
+    end
+    humanoid:GetPropertyChangedSignal("Health"):Connect(updateHealth)
+    humanoid:GetPropertyChangedSignal("MaxHealth"):Connect(updateHealth)
+    updateHealth()
+end
+LocalPlayer.CharacterAdded:Connect(setupHealthTracker)
+if LocalPlayer.Character then
+    setupHealthTracker(LocalPlayer.Character)
+end
+
+-- อัปเดต Hunger %
+local HungerBar = Interface:WaitForChild("StatBars"):WaitForChild("HungerBar"):WaitForChild("Bar")
+local function updateHunger()
+    local percent = math.floor(HungerBar.Size.X.Scale * 100)
+    HungerTag:SetTitle("🍖 " .. percent .. "%")
+end
+HungerBar:GetPropertyChangedSignal("Size"):Connect(updateHunger)
+updateHunger()
+
+-- ☰ Main Tab
+local MainTab = Window:Tab({
+    Title = "Main",
+    Icon = "layers"
+})
+
+-- 🧍 Player Tab
+local PlayerTab = Window:Tab({
+    Title = "Player",
+    Icon = "user"
+})
+
+PlayerTab:Toggle({
+    Title = "Open Chests Instantly (No Cooldown)",
+    Default = false,
+    Callback = function(Value)
+        for _, prompt in pairs(workspace:GetDescendants()) do
+            if prompt:IsA("ProximityPrompt") then
+                if Value then
+                    if pcall(function() prompt.CooldownDuration = 0 end) then end
+                    if pcall(function() prompt.HoldDuration = 0 end) then end
+                else
+                    if pcall(function() prompt.CooldownDuration = 1 end) then end
+                    if pcall(function() prompt.HoldDuration = 0.5 end) then end
+                end
+            end
+        end
+    end,
+})
+
+-- 🤖 Auto Tab
+local AutoTab = Window:Tab({
+    Title = "Auto",
+    Icon = "zap"
+})
+
+-- 📦 Items Tab
+local ItemsTab = Window:Tab({
+    Title = "Items",
+    Icon = "box"
+})
+
+-- =========================================================
+-- 📦 Items Dropdown + Teleport
+-- =========================================================
+
+ItemsTab:Section({
+    Title = "Teleport Items 📦",
+    Description = "Tools to find and teleport to specific items"
+})
+-- Variable to store selected item name
+local SelectedItemName = nil
+
+-- 🔍 Get unique item names from workspace.Items
+local function GetUniqueItemNames()
+    local itemsFolder = workspace:FindFirstChild("Items")
+    local nameSet, uniqueNames = {}, {}
+
+    if itemsFolder then
+        for _, item in ipairs(itemsFolder:GetChildren()) do
+            if not nameSet[item.Name] then
+                nameSet[item.Name] = true
+                table.insert(uniqueNames, item.Name)
+            end
+        end
+    end
+
+    return uniqueNames
+end
+
+-- 🔍 Get teleport position (CFrame)
+local function GetTeleportCFrame(object)
+    if object:IsA("BasePart") then
+        return object.CFrame
+    elseif object:IsA("Model") then
+        local primary = object.PrimaryPart or object:FindFirstChildWhichIsA("BasePart")
+        if primary then
+            return primary.CFrame
+        end
+    end
+    return nil
+end
+
+-- 🔽 Dropdown UI
+ItemsTab:Dropdown({
+    Title = "Select Item",
+    Values = GetUniqueItemNames(),
+    Multi = false,
+    Default = nil,
+    Callback = function(selected)
+        SelectedItemName = selected
+    end
+})
+
+-- 🧭 Teleport Button
+ItemsTab:Button({
+    Title = "Teleport to Item",
+    Callback = function()
+        if not SelectedItemName then
+            WindUI:Notify({
+                Title = "⚠️ Warning",
+                Content = "Please select an item before teleporting.",
+                Duration = 3
+            })
+            return
+        end
+
+        local itemsFolder = workspace:FindFirstChild("Items")
+        if not itemsFolder then
+            WindUI:Notify({
+                Title = "❌ Error",
+                Content = "Items folder not found in workspace.",
+                Duration = 3
+            })
+            return
+        end
+
+        -- Find all items matching the selected name
+        local matchingItems = {}
+        for _, item in ipairs(itemsFolder:GetChildren()) do
+            if item.Name == SelectedItemName then
+                table.insert(matchingItems, item)
+            end
+        end
+
+        if #matchingItems == 0 then
+            WindUI:Notify({
+                Title = "❌ Error",
+                Content = "No items found with name: " .. SelectedItemName,
+                Duration = 3
+            })
+            return
+        end
+
+        -- Randomly pick one item
+        local chosenItem = matchingItems[math.random(1, #matchingItems)]
+        local teleportCFrame = GetTeleportCFrame(chosenItem)
+
+        if not teleportCFrame then
+            WindUI:Notify({
+                Title = "❌ Error",
+                Content = "Could not find a teleport location for this item.",
+                Duration = 3
+            })
+            return
+        end
+
+        -- Teleport the player
+        local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+        local hrp = character:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            hrp.CFrame = teleportCFrame + Vector3.new(0, 5, 0)
+        else
+            WindUI:Notify({
+                Title = "⚠️ Warning",
+                Content = "HumanoidRootPart not found.",
+                Duration = 3
+            })
+        end
+    end
+})
+
+-- =========================================================
+-- 👶 Lost Child Section (English version with Header)
+-- =========================================================
+
+-- Section Header
+ItemsTab:Section({
+    Title = "Teleport Lost Child👶",
+    Description = "Tools to find and teleport to Lost Child models"
+})
+
+-- Function to get unique Lost Child models
+local function GetUniqueLostChildren()
+    local descendants = workspace:GetDescendants()
+    local names, unique = {}, {}
+
+    for _, obj in pairs(descendants) do
+        if obj:IsA("Model") and string.match(obj.Name, "^Lost Child") then
+            if not unique[obj.Name] then
+                table.insert(names, obj.Name)
+                unique[obj.Name] = true
+            end
+        end
+    end
+
+    return names
+end
+
+local selectedLostChild = nil
+
+-- Dropdown UI (Select Lost Child)
+ItemsTab:Dropdown({
+    Title = "Select Lost Child",
+    Description = "Find Lost Child models in workspace",
+    Values = GetUniqueLostChildren(),
+    Multi = false,
+    Callback = function(value)
+        selectedLostChild = value
+    end,
+})
+
+-- Button to Teleport to Lost Child
+ItemsTab:Button({
+    Title = "Teleport to Lost Child",
+    Description = "Teleport to the selected Lost Child",
+    Callback = function()
+        if selectedLostChild then
+            local target = workspace:FindFirstChild(selectedLostChild, true) -- deep search
+            local player = game.Players.LocalPlayer
+            if target and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                local hrp = player.Character.HumanoidRootPart
+                if target.PrimaryPart then
+                    hrp.CFrame = target.PrimaryPart.CFrame + Vector3.new(0, 5, 0)
+                elseif target:IsA("Model") then
+                    hrp.CFrame = target:GetModelCFrame() + Vector3.new(0, 5, 0)
+                else
+                    warn("Target has no PrimaryPart")
+                end
+            else
+                warn("Target or player not found")
+            end
+        else
+            warn("No Lost Child selected")
+        end
+    end,
+})
+
+
+-- 🌍 Teleport Tab
+local TeleportTab = Window:Tab({
+    Title = "Teleport",
+    Icon = "map"
+})
+
+TeleportTab:Button({
+   Title = "Teleport to MainFire",
+   Description = "ย้ายตัวไปที่กองไฟกลาง (MainFire)",
+   Callback = function()
+      local player = game.Players.LocalPlayer
+      local character = player.Character or player.CharacterAdded:Wait()
+      local hrp = character:WaitForChild("HumanoidRootPart")
+
+      local target = workspace:WaitForChild("Map")
+         :WaitForChild("Campground")
+         :WaitForChild("MainFire")
+
+      if target and target:IsA("Model") and target.PrimaryPart then
+         hrp.CFrame = target.PrimaryPart.CFrame + Vector3.new(0, 5, 0)
+      else
+         warn("MainFire ไม่มี PrimaryPart")
+      end
+   end,
+})
+
+TeleportTab:Button({
+   Title = "Teleport to Diamond Chest",
+   Description = "ย้ายตัวไป Stronghold Diamond Chest",
+   Callback = function()
+      local player = game.Players.LocalPlayer
+      local character = player.Character or player.CharacterAdded:Wait()
+      local hrp = character:WaitForChild("HumanoidRootPart")
+
+      local target = workspace:WaitForChild("Items")
+         :WaitForChild("Stronghold Diamond Chest")
+
+      if target and target:IsA("Model") and target.PrimaryPart then
+         hrp.CFrame = target.PrimaryPart.CFrame + Vector3.new(0, 5, 0)
+      else
+         warn("Stronghold Diamond Chest ไม่มี PrimaryPart")
+      end
+   end,
+})
+
+TeleportTab:Button({
+   Title = "Teleport to Alien Chest",
+   Description = "ย้ายตัวไป Alien Chest",
+   Callback = function()
+      local player = game.Players.LocalPlayer
+      local character = player.Character or player.CharacterAdded:Wait()
+      local hrp = character:WaitForChild("HumanoidRootPart")
+
+      local target = workspace:WaitForChild("Items")
+         :WaitForChild("Alien Chest")
+
+      if target and target:IsA("Model") and target.PrimaryPart then
+         hrp.CFrame = target.PrimaryPart.CFrame + Vector3.new(0, 5, 0)
+      else
+         warn("Alien Chest ไม่มี PrimaryPart")
+      end
+   end,
+})
+
+-- 👁️ Visual Tab
+local VisualTab = Window:Tab({
+    Title = "Visual",
+    Icon = "eye"
+})
+
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local LocalPlayer = Players.LocalPlayer
+
+local espAllItemsEnabled = false
+local espItemChestEnabled = false
+local espPlayersEnabled = false
+
+local itemConnections = {}
+local chestConnections = {}
+local playerConnections = {}
+
+-- 📌 ฟังก์ชันหาว่าเราจะเอา Part ไหนเป็นจุดติด ESP
+local function GetAdornee(obj)
+    if obj:IsA("Model") then
+        return obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+    elseif obj:IsA("BasePart") or obj:IsA("MeshPart") then
+        return obj
+    end
+    return nil
+end
+
+-- 📌 ฟังก์ชันสร้าง ESP
+local function CreateNameEsp(obj, displayName, color)
+    local adornee = GetAdornee(obj)
+    if not adornee or adornee:FindFirstChild("ESP_NameTag") then return end
+
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "ESP_NameTag"
+    billboard.Adornee = adornee
+    billboard.Size = UDim2.new(0, 250, 0, 70)
+    billboard.StudsOffset = Vector3.new(0, (adornee.Size.Y or 2) + 2, 0)
+    billboard.AlwaysOnTop = true
+
+    local textLabel = Instance.new("TextLabel")
+    textLabel.Size = UDim2.new(1, 0, 1, 0)
+    textLabel.BackgroundTransparency = 1
+    textLabel.Text = displayName
+    textLabel.TextColor3 = color or Color3.fromRGB(0, 255, 0)
+    textLabel.TextStrokeTransparency = 0.5
+    textLabel.Font = Enum.Font.GothamBold
+    textLabel.TextScaled = true
+    textLabel.TextTransparency = 1
+    textLabel.Parent = billboard
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Thickness = 2
+    stroke.Color = Color3.fromRGB(0, 0, 0)
+    stroke.Transparency = 1
+    stroke.Parent = textLabel
+
+    TweenService:Create(textLabel, TweenInfo.new(0.3), {TextTransparency = 0}):Play()
+    TweenService:Create(stroke, TweenInfo.new(0.3), {Transparency = 0}):Play()
+
+    billboard.Parent = adornee
+end
+
+-- 📌 ฟังก์ชันลบ ESP ทั้งหมดในโฟลเดอร์
+local function ClearESP(folder)
+    for _, obj in pairs(folder:GetDescendants()) do
+        local adornee = GetAdornee(obj)
+        if adornee and adornee:FindFirstChild("ESP_NameTag") then
+            adornee.ESP_NameTag:Destroy()
+        end
+    end
+end
+
+-- 🔹 ESP All Items
+VisualTab:Toggle({
+    Title = "ESP All Items 📦",
+    Default = false,
+    Callback = function(state)
+        espAllItemsEnabled = state
+        local itemsFolder = workspace:FindFirstChild("Items")
+        if not itemsFolder then return end
+
+        if not state then
+            for _, conn in pairs(itemConnections) do conn:Disconnect() end
+            itemConnections = {}
+            ClearESP(itemsFolder)
+            return
+        end
+
+        for _, obj in pairs(itemsFolder:GetChildren()) do
+            local adornee = GetAdornee(obj)
+            if adornee then
+                CreateNameEsp(obj, obj.Name, Color3.fromRGB(0, 255, 0))
+            end
+        end
+
+        table.insert(itemConnections, itemsFolder.ChildAdded:Connect(function(obj)
+            local adornee = GetAdornee(obj)
+            if adornee then
+                CreateNameEsp(obj, obj.Name, Color3.fromRGB(0, 255, 0))
+            end
+        end))
+    end
+})
+
+-- 🔹 ESP Item Chest
+VisualTab:Toggle({
+    Title = "ESP Item Chest 📦",
+    Default = false,
+    Callback = function(state)
+        espItemChestEnabled = state
+        local itemsFolder = workspace:FindFirstChild("Items")
+        if not itemsFolder then return end
+
+        if not state then
+            for _, conn in pairs(chestConnections) do conn:Disconnect() end
+            chestConnections = {}
+            ClearESP(itemsFolder)
+            return
+        end
+
+        for _, obj in pairs(itemsFolder:GetChildren()) do
+            if obj.Name:sub(1, 10) == "Item Chest" then
+                local adornee = GetAdornee(obj)
+                if adornee then
+                    CreateNameEsp(obj, obj.Name, Color3.fromRGB(255, 255, 0)) -- เหลือง
+                end
+            end
+        end
+
+        table.insert(chestConnections, itemsFolder.ChildAdded:Connect(function(obj)
+            if obj.Name:sub(1, 10) == "Item Chest" then
+                local adornee = GetAdornee(obj)
+                if adornee then
+                    CreateNameEsp(obj, obj.Name, Color3.fromRGB(255, 255, 0))
+                end
+            end
+        end))
+    end
+})
+
+-- 🔹 ESP Players
+VisualTab:Toggle({
+    Title = "ESP Players 👤",
+    Default = false,
+    Callback = function(state)
+        espPlayersEnabled = state
+
+        if not state then
+            for _, conn in pairs(playerConnections) do conn:Disconnect() end
+            playerConnections = {}
+            for _, plr in pairs(Players:GetPlayers()) do
+                if plr ~= LocalPlayer and plr.Character then
+                    local head = plr.Character:FindFirstChild("Head")
+                    if head and head:FindFirstChild("ESP_NameTag") then
+                        head.ESP_NameTag:Destroy()
+                    end
+                end
+            end
+            return
+        end
+
+        for _, plr in pairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("Head") then
+                CreateNameEsp(plr.Character.Head, plr.Name, Color3.fromRGB(0, 170, 255))
+            end
+        end
+
+        table.insert(playerConnections, Players.PlayerAdded:Connect(function(plr)
+            plr.CharacterAdded:Connect(function(char)
+                local head = char:WaitForChild("Head", 5)
+                if head then
+                    CreateNameEsp(head, plr.Name, Color3.fromRGB(0, 170, 255))
+                end
+            end)
+        end))
+    end
+})
+
+
+
+
+-- ⚙️ Settings Tab
+local SettingsTab = Window:Tab({
+    Title = "Settings",
+    Icon = "settings"
+})
+
+-- 🌙/☀️ Theme Switcher
+local theme = "Dark"
+local themeBtn = Window:CreateTopbarButton("theme-switcher", "moon", function()
+    theme = (theme == "Dark") and "Light" or "Dark"
+    WindUI:SetTheme(theme)
+    themeBtn:SetIcon(theme == "Dark" and "moon" or "sun")
+    WindUI:Notify({
+        Title = "Theme Changed",
+        Content = "Now using: " .. theme .. " mode",
+        Duration = 2
+    })
+end, 10)
+
+
+-- ❌ กด X = ซ่อน ไม่ปิดถาวร
+Window:OnClose(function()
+    if Window.Gui then
+        Window.Gui.Enabled = false
+        uiVisible = false
+    end
+    WindUI:Notify({
+        Title = "Journey Paused",
+        Content = "Press G to reopen the UI",
+        Duration = 3
+    })
+end)
+
+-- ปิด UI
+Window:OnClose(function()
+    WindUI:Notify({
+        Title = "Journey Paused",
+        Content = "Press G to reopen the UI",
+        Duration = 3
+    })
+end)
