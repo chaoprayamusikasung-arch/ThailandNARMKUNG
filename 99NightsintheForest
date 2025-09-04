@@ -1,0 +1,580 @@
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+-- โหลด WindUI
+local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
+
+WindUI.TransparencyValue = 0.15
+WindUI:SetTheme("Dark")
+
+-- Main Window
+local Window = WindUI:CreateWindow({
+    Title = "99 Nights in the Forest",
+    Icon = "trees",
+    Author = "Forest Survivor",
+    Folder = "ForestSurvival_99Nights",
+    Size = UDim2.fromOffset(680, 550),
+    Theme = "Dark",
+    Acrylic = true,
+    SideBarWidth = 240,
+})
+
+-- ❤️ Health Tag
+local HealthTag = Window:Tag({
+    Title = "❤️ 100%",
+    Color = Color3.fromHex("#FF6B6B")
+})
+
+-- 🍖 Hunger Tag
+local HungerTag = Window:Tag({
+    Title = "🍖 100%",
+    Color = Color3.fromHex("#FFA500")
+})
+
+-- 🌞 DayCounter
+local Interface = PlayerGui:WaitForChild("Interface")
+local dayCounterLabel = Interface:WaitForChild("DayCounter") :: TextLabel
+
+local DayTag = Window:Tag({
+    Title = "☀️ " .. dayCounterLabel.Text,
+    Color = Color3.fromHex("#FFD700")
+})
+dayCounterLabel:GetPropertyChangedSignal("Text"):Connect(function()
+    DayTag:SetTitle("☀️ " .. dayCounterLabel.Text)
+end)
+
+-- อัปเดตเลือด %
+local function setupHealthTracker(char: Model)
+    local humanoid = char:WaitForChild("Humanoid")
+    local function updateHealth()
+        local health = humanoid.Health
+        local maxHealth = humanoid.MaxHealth
+        local percent = 0
+        if maxHealth > 0 then
+            percent = math.floor((health / maxHealth) * 100)
+        end
+        HealthTag:SetTitle("❤️ " .. percent .. "%")
+    end
+    humanoid:GetPropertyChangedSignal("Health"):Connect(updateHealth)
+    humanoid:GetPropertyChangedSignal("MaxHealth"):Connect(updateHealth)
+    updateHealth()
+end
+LocalPlayer.CharacterAdded:Connect(setupHealthTracker)
+if LocalPlayer.Character then
+    setupHealthTracker(LocalPlayer.Character)
+end
+
+-- อัปเดต Hunger %
+local HungerBar = Interface:WaitForChild("StatBars"):WaitForChild("HungerBar"):WaitForChild("Bar")
+local function updateHunger()
+    local percent = math.floor(HungerBar.Size.X.Scale * 100)
+    HungerTag:SetTitle("🍖 " .. percent .. "%")
+end
+HungerBar:GetPropertyChangedSignal("Size"):Connect(updateHunger)
+updateHunger()
+
+-- 🧍 Player Tab
+local PlayerTab = Window:Tab({
+    Title = "Player",
+    Icon = "user"
+})
+
+PlayerTab:Toggle({
+    Title = "Open Chests Instantly (No Cooldown)",
+    Default = false,
+    Callback = function(Value)
+        for _, prompt in pairs(workspace:GetDescendants()) do
+            if prompt:IsA("ProximityPrompt") then
+                if Value then
+                    if pcall(function() prompt.CooldownDuration = 0 end) then end
+                    if pcall(function() prompt.HoldDuration = 0 end) then end
+                else
+                    if pcall(function() prompt.CooldownDuration = 1 end) then end
+                    if pcall(function() prompt.HoldDuration = 0.5 end) then end
+                end
+            end
+        end
+    end,
+})
+
+-- 🤖 Auto Tab
+local AutoTab = Window:Tab({
+    Title = "Auto",
+    Icon = "zap"
+})
+
+-- =========================================================
+-- ⚔️ Kill Aura System
+-- =========================================================
+local KillAuraActive = false
+local CONFIG = {
+    DISTANCE = 100, -- ✅ ระยะโจมตีตายตัว
+    DAMAGE = 999,
+    DELAY = 0.1
+}
+
+local function StartKillAura()
+    task.spawn(function()
+        while KillAuraActive do
+            local character = LocalPlayer.Character
+            if character and character:FindFirstChild("HumanoidRootPart") then
+                local rootPart = character.HumanoidRootPart
+
+                -- หาอาวุธใน Inventory
+                local weapon = LocalPlayer:FindFirstChild("Inventory") and (
+                    LocalPlayer.Inventory:FindFirstChild("Old Axe") or
+                    LocalPlayer.Inventory:FindFirstChild("Good Axe") or
+                    LocalPlayer.Inventory:FindFirstChild("Strong Axe") or
+                    LocalPlayer.Inventory:FindFirstChild("Chainsaw")
+                )
+
+                if weapon then
+                    for _, enemy in pairs(workspace.Characters:GetChildren()) do
+                        if enemy:IsA("Model") and enemy.PrimaryPart and enemy ~= character then
+                            if not enemy.Name:find("Lost Child") and enemy.Name ~= "Pelt Trader" then
+                                local distance = (enemy.PrimaryPart.Position - rootPart.Position).Magnitude
+                                if distance <= CONFIG.DISTANCE then
+                                    pcall(function()
+                                        game.ReplicatedStorage.RemoteEvents.ToolDamageObject:InvokeServer(
+                                            enemy,
+                                            weapon,
+                                            CONFIG.DAMAGE,
+                                            rootPart.CFrame
+                                        )
+                                    end)
+                                end
+                            end
+                        end
+                    end
+                else
+                    WindUI:Notify({
+                        Title = "⚠️ ไม่มีอาวุธ",
+                        Content = "กรุณาถืออาวุธ (ขวาน หรือ เลื่อยยนต์)!",
+                        Duration = 3
+                    })
+                    KillAuraActive = false
+                end
+            end
+            task.wait(CONFIG.DELAY)
+        end
+    end)
+end
+
+-- 🗡️ Toggle เปิดปิด Kill Aura
+AutoTab:Toggle({
+    Title = "⚔️ Auto Kill Aura",
+    Default = false,
+    Callback = function(Value)
+        KillAuraActive = Value
+        if Value then
+            local weapon = LocalPlayer.Inventory:FindFirstChild("Old Axe") or
+                          LocalPlayer.Inventory:FindFirstChild("Good Axe") or
+                          LocalPlayer.Inventory:FindFirstChild("Strong Axe") or
+                          LocalPlayer.Inventory:FindFirstChild("Chainsaw")
+            if weapon then
+                WindUI:Notify({
+                    Title = "⚔️ Kill Aura",
+                    Content = "เปิดใช้งาน (ระยะ 100)",
+                    Duration = 2
+                })
+                StartKillAura()
+            else
+                WindUI:Notify({
+                    Title = "❌ ไม่พบอาวุธ",
+                    Content = "กรุณาถืออาวุธก่อนเปิดระบบ!",
+                    Duration = 3
+                })
+                KillAuraActive = false
+            end
+        end
+    end
+})
+
+-- =========================================================
+-- 🌲 Auto Chop Tree System
+-- =========================================================
+local AutoChopTreeActive = false
+local ChopTreeDistance = 100
+
+local function StartAutoChopTree()
+    task.spawn(function()
+        while AutoChopTreeActive do
+            local player = game.Players.LocalPlayer
+            local character = player.Character or player.CharacterAdded:Wait()
+            local hrp = character:WaitForChild("HumanoidRootPart")
+            local weapon = (player.Inventory:FindFirstChild("Old Axe") or 
+                           player.Inventory:FindFirstChild("Good Axe") or 
+                           player.Inventory:FindFirstChild("Strong Axe") or 
+                           player.Inventory:FindFirstChild("Chainsaw"))
+
+            if weapon then
+                -- Check trees in Map.Foliage
+                task.spawn(function()
+                    for _, tree in pairs(workspace.Map.Foliage:GetChildren()) do
+                        if tree:IsA("Model") and (tree.Name == "Small Tree" or tree.Name == "TreeBig1" or tree.Name == "TreeBig2") and tree.PrimaryPart then
+                            local distance = (tree.PrimaryPart.Position - hrp.Position).Magnitude
+                            if distance <= ChopTreeDistance then
+                                local result = game:GetService("ReplicatedStorage").RemoteEvents.ToolDamageObject:InvokeServer(tree, weapon, 999, hrp.CFrame)
+                            end
+                        end
+                    end
+                end)
+
+                -- Check trees in Map.Landmarks
+                task.spawn(function()
+                    for _, tree in pairs(workspace.Map.Landmarks:GetChildren()) do
+                        if tree:IsA("Model") and (tree.Name == "Small Tree" or tree.Name == "TreeBig1" or tree.Name == "TreeBig2") and tree.PrimaryPart then
+                            local distance = (tree.PrimaryPart.Position - hrp.Position).Magnitude
+                            if distance <= ChopTreeDistance then
+                                local result = game:GetService("ReplicatedStorage").RemoteEvents.ToolDamageObject:InvokeServer(tree, weapon, 999, hrp.CFrame)
+                            end
+                        end
+                    end
+                end)
+            else
+                WindUI:Notify({
+                    Title = "⚠️ ไม่มีอาวุธ",
+                    Content = "กรุณาถืออาวุธ (ขวาน หรือ เลื่อยยนต์)!",
+                    Duration = 3
+                })
+                AutoChopTreeActive = false
+            end
+            
+            task.wait(0.1)
+        end
+    end)
+end
+
+-- 🌲 Toggle Auto Chop Tree
+AutoTab:Toggle({
+    Title = "🌲 Auto Chop Tree",
+    Description = "Automatically chop nearby trees",
+    Default = false,
+    Callback = function(Value)
+        AutoChopTreeActive = Value
+        if Value then
+            local weapon = LocalPlayer.Inventory:FindFirstChild("Old Axe") or
+                          LocalPlayer.Inventory:FindFirstChild("Good Axe") or
+                          LocalPlayer.Inventory:FindFirstChild("Strong Axe") or
+                          LocalPlayer.Inventory:FindFirstChild("Chainsaw")
+            if weapon then
+                WindUI:Notify({
+                    Title = "🌲 Auto Chop Tree",
+                    Content = "เปิดใช้งาน (ระยะ " .. ChopTreeDistance .. ")",
+                    Duration = 2
+                })
+                StartAutoChopTree()
+            else
+                WindUI:Notify({
+                    Title = "❌ ไม่พบอาวุธ",
+                    Content = "กรุณาถืออาวุธก่อนเปิดระบบ!",
+                    Duration = 3
+                })
+                AutoChopTreeActive = false
+            end
+        end
+    end
+})
+
+-- 📦 Items Tab
+local ItemsTab = Window:Tab({
+    Title = "Items",
+    Icon = "box"
+})
+
+-- =========================================================
+-- 📦 Items Dropdown + Teleport
+-- =========================================================
+
+ItemsTab:Section({
+    Title = "Teleport Items 📦",
+    Description = "Tools to find and teleport to specific items"
+})
+-- Variable to store selected item name
+local SelectedItemName = nil
+
+-- 🔍 Get unique item names from workspace.Items
+local function GetUniqueItemNames()
+    local itemsFolder = workspace:FindFirstChild("Items")
+    local nameSet, uniqueNames = {}, {}
+
+    if itemsFolder then
+        for _, item in ipairs(itemsFolder:GetChildren()) do
+            if not nameSet[item.Name] then
+                nameSet[item.Name] = true
+                table.insert(uniqueNames, item.Name)
+            end
+        end
+    end
+
+    return uniqueNames
+end
+
+-- 🔍 Get teleport position (CFrame)
+local function GetTeleportCFrame(object)
+    if object:IsA("BasePart") then
+        return object.CFrame
+    elseif object:IsA("Model") then
+        local primary = object.PrimaryPart or object:FindFirstChildWhichIsA("BasePart")
+        if primary then
+            return primary.CFrame
+        end
+    end
+    return nil
+end
+
+-- 🔽 Dropdown UI
+ItemsTab:Dropdown({
+    Title = "Select Item",
+    Values = GetUniqueItemNames(),
+    Multi = false,
+    Default = nil,
+    Callback = function(selected)
+        SelectedItemName = selected
+    end
+})
+
+-- 🧭 Teleport Button
+ItemsTab:Button({
+    Title = "Teleport to Item",
+    Callback = function()
+        if not SelectedItemName then
+            WindUI:Notify({
+                Title = "⚠️ Warning",
+                Content = "Please select an item before teleporting.",
+                Duration = 3
+            })
+            return
+        end
+
+        local itemsFolder = workspace:FindFirstChild("Items")
+        if not itemsFolder then
+            WindUI:Notify({
+                Title = "❌ Error",
+                Content = "Items folder not found in workspace.",
+                Duration = 3
+            })
+            return
+        end
+
+        -- Find all items matching the selected name
+        local matchingItems = {}
+        for _, item in ipairs(itemsFolder:GetChildren()) do
+            if item.Name == SelectedItemName then
+                table.insert(matchingItems, item)
+            end
+        end
+
+        if #matchingItems == 0 then
+            WindUI:Notify({
+                Title = "❌ Error",
+                Content = "No items found with name: " .. SelectedItemName,
+                Duration = 3
+            })
+            return
+        end
+
+        -- Randomly pick one item
+        local chosenItem = matchingItems[math.random(1, #matchingItems)]
+        local teleportCFrame = GetTeleportCFrame(chosenItem)
+
+        if not teleportCFrame then
+            WindUI:Notify({
+                Title = "❌ Error",
+                Content = "Could not find a teleport location for this item.",
+                Duration = 3
+            })
+            return
+        end
+
+        -- Teleport the player
+        local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+        local hrp = character:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            hrp.CFrame = teleportCFrame + Vector3.new(0, 5, 0)
+        else
+            WindUI:Notify({
+                Title = "⚠️ Warning",
+                Content = "HumanoidRootPart not found.",
+                Duration = 3
+            })
+        end
+    end
+})
+
+-- =========================================================
+-- 👶 Lost Child Section (English version with Header)
+-- =========================================================
+
+-- Section Header
+ItemsTab:Section({
+    Title = "Teleport Lost Child👶",
+    Description = "Tools to find and teleport to Lost Child models"
+})
+
+-- Function to get unique Lost Child models
+local function GetUniqueLostChildren()
+    local descendants = workspace:GetDescendants()
+    local names, unique = {}, {}
+
+    for _, obj in pairs(descendants) do
+        if obj:IsA("Model") and string.match(obj.Name, "^Lost Child") then
+            if not unique[obj.Name] then
+                table.insert(names, obj.Name)
+                unique[obj.Name] = true
+            end
+        end
+    end
+
+    return names
+end
+
+local selectedLostChild = nil
+
+-- Dropdown UI (Select Lost Child)
+ItemsTab:Dropdown({
+    Title = "Select Lost Child",
+    Description = "Find Lost Child models in workspace",
+    Values = GetUniqueLostChildren(),
+    Multi = false,
+    Callback = function(value)
+        selectedLostChild = value
+    end,
+})
+
+-- Button to Teleport to Lost Child
+ItemsTab:Button({
+    Title = "Teleport to Lost Child",
+    Description = "Teleport to the selected Lost Child",
+    Callback = function()
+        if selectedLostChild then
+            local target = workspace:FindFirstChild(selectedLostChild, true) -- deep search
+            local player = game.Players.LocalPlayer
+            if target and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                local hrp = player.Character.HumanoidRootPart
+                if target.PrimaryPart then
+                    hrp.CFrame = target.PrimaryPart.CFrame + Vector3.new(0, 5, 0)
+                elseif target:IsA("Model") then
+                    hrp.CFrame = target:GetModelCFrame() + Vector3.new(0, 5, 0)
+                else
+                    warn("Target has no PrimaryPart")
+                end
+            else
+                warn("Target or player not found")
+            end
+        else
+            warn("No Lost Child selected")
+        end
+    end,
+})
+
+
+-- 🌍 Teleport Tab
+local TeleportTab = Window:Tab({
+    Title = "Teleport",
+    Icon = "map"
+})
+
+TeleportTab:Button({
+   Title = "Teleport to MainFire",
+   Description = "ย้ายตัวไปที่กองไฟกลาง (MainFire)",
+   Callback = function()
+      local player = game.Players.LocalPlayer
+      local character = player.Character or player.CharacterAdded:Wait()
+      local hrp = character:WaitForChild("HumanoidRootPart")
+
+      local target = workspace:WaitForChild("Map")
+         :WaitForChild("Campground")
+         :WaitForChild("MainFire")
+
+      if target and target:IsA("Model") and target.PrimaryPart then
+         hrp.CFrame = target.PrimaryPart.CFrame + Vector3.new(0, 5, 0)
+      else
+         warn("MainFire ไม่มี PrimaryPart")
+      end
+   end,
+})
+
+TeleportTab:Button({
+   Title = "Teleport to Diamond Chest",
+   Description = "ย้ายตัวไป Stronghold Diamond Chest",
+   Callback = function()
+      local player = game.Players.LocalPlayer
+      local character = player.Character or player.CharacterAdded:Wait()
+      local hrp = character:WaitForChild("HumanoidRootPart")
+
+      local target = workspace:WaitForChild("Items")
+         :WaitForChild("Stronghold Diamond Chest")
+
+      if target and target:IsA("Model") and target.PrimaryPart then
+         hrp.CFrame = target.PrimaryPart.CFrame + Vector3.new(0, 5, 0)
+      else
+         warn("Stronghold Diamond Chest ไม่มี PrimaryPart")
+      end
+   end,
+})
+
+TeleportTab:Button({
+   Title = "Teleport to Alien Chest",
+   Description = "ย้ายตัวไป Alien Chest",
+   Callback = function()
+      local player = game.Players.LocalPlayer
+      local character = player.Character or player.CharacterAdded:Wait()
+      local hrp = character:WaitForChild("HumanoidRootPart")
+
+      local target = workspace:WaitForChild("Items")
+         :WaitForChild("Alien Chest")
+
+      if target and target:IsA("Model") and target.PrimaryPart then
+         hrp.CFrame = target.PrimaryPart.CFrame + Vector3.new(0, 5, 0)
+      else
+         warn("Alien Chest ไม่มี PrimaryPart")
+      end
+   end,
+})
+
+-- ⚙️ Settings Tab
+local SettingsTab = Window:Tab({
+    Title = "Settings",
+    Icon = "settings"
+})
+
+-- 🌙/☀️ Theme Switcher
+local theme = "Dark"
+local themeBtn = Window:CreateTopbarButton("theme-switcher", "moon", function()
+    theme = (theme == "Dark") and "Light" or "Dark"
+    WindUI:SetTheme(theme)
+    themeBtn:SetIcon(theme == "Dark" and "moon" or "sun")
+    WindUI:Notify({
+        Title = "Theme Changed",
+        Content = "Now using: " .. theme .. " mode",
+        Duration = 2
+    })
+end, 10)
+
+
+-- ❌ กด X = ซ่อน ไม่ปิดถาวร
+Window:OnClose(function()
+    if Window.Gui then
+        Window.Gui.Enabled = false
+        uiVisible = false
+    end
+    WindUI:Notify({
+        Title = "Journey Paused",
+        Content = "Press G to reopen the UI",
+        Duration = 3
+    })
+end)
+
+
+
+
+-- ปิด UI
+Window:OnClose(function()
+    WindUI:Notify({
+        Title = "Journey Paused",
+        Content = "Press G to reopen the UI",
+        Duration = 3
+    })
+end)
